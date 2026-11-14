@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SNCR pas à pas</title>
+<style>
+:root{--bg:#eceff2;--card:#fff;--tx:#1b1f24;--mut:#59636e;--bd:#d5dbe1;--red:#c8101a;--chip:#f3f5f7;--ok:#1a7f4b;--bad:#c8101a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171a;--card:#1d2226;--tx:#eef1f4;--mut:#9aa6b2;--bd:#323a41;--chip:#252c31;--ok:#4cc38a;--bad:#ff6b6b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171a;--card:#1d2226;--tx:#eef1f4;--mut:#9aa6b2;--bd:#323a41;--chip:#252c31;--ok:#4cc38a;--bad:#ff6b6b;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Tahoma,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:16px 14px 28px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+h1{font-size:22px;margin:0}
+.lang button,.seg button{font:inherit;font-size:14px;border:1px solid var(--bd);background:var(--chip);color:var(--tx);padding:6px 12px;cursor:pointer}
+.lang button:first-child,.seg button:first-child{border-radius:7px 0 0 7px}.lang button:last-child,.seg button:last-child{border-radius:0 7px 7px 0}
+.lang button[aria-pressed=true],.seg button[aria-pressed=true]{background:var(--red);border-color:var(--red);color:#fff}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+canvas{width:100%;display:block;border-radius:8px;background:#15191d}
+.panel{margin-top:12px;padding:16px}
+.meta{display:flex;justify-content:space-between;align-items:center;color:var(--mut);font-size:13.5px;gap:8px}
+.dots{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.dots button{width:13px;height:13px;border-radius:50%;border:2px solid var(--red);background:transparent;padding:0;cursor:pointer}
+.dots button.on{background:var(--red)}
+#ttl{font-size:21px;margin:8px 0 4px}
+#txt{margin:0;max-width:75ch;font-size:16.5px}
+#eq{margin:10px 0 0;padding:8px 10px;background:var(--chip);border-radius:6px;font-size:15px}
+#play{margin-top:12px;padding-top:12px;border-top:1px solid var(--bd)}
+.r{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-bottom:8px}
+#play label{font-weight:600;font-size:14px;display:block}
+#play input[type=range]{width:min(100%,300px);accent-color:var(--red)}
+#msg{margin:10px 0 0;padding:8px 10px;border-left:5px solid var(--ok);background:var(--chip);border-radius:6px}
+#msg.bad{border-left-color:var(--bad)}
+.nav{display:flex;gap:10px;margin-top:14px}
+.nav button{font:inherit;font-size:16px;padding:10px 20px;border-radius:8px;border:1px solid var(--bd);background:var(--chip);color:var(--tx);cursor:pointer}
+.nav #next{background:var(--red);border-color:var(--red);color:#fff;font-weight:600;flex:1}
+.nav button:disabled{opacity:.4;cursor:default}
+:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top"><h1>La SNCR, pas à pas</h1><div class="lang" role="group" aria-label="Langue"><button id="l-fr" aria-pressed="true">Français</button><button id="l-ar" aria-pressed="false">العربية</button><button id="l-en" aria-pressed="false">English</button></div></div>
+<div class="card"><canvas id="cv" width="900" height="380" role="img" aria-label="Schéma animé d’une unité SNCR"></canvas></div>
+<div class="card panel">
+<div class="meta"><span id="cnt"></span><div class="dots" id="dots"></div></div>
+<h2 id="ttl"></h2><p id="txt"></p>
+<div id="eq" hidden></div>
+<div id="play" hidden>
+<div class="r"><div class="seg" role="group" aria-label="Réactif"><button id="b-nh3" aria-pressed="true">NH₃</button><button id="b-urea" aria-pressed="false">Urée</button></div>
+<div><label id="lT" for="T"></label><input id="T" type="range" min="700" max="1300" step="10" value="950"></div></div>
+<div class="r" id="adv" hidden><div><label id="lt" for="t"></label><input id="t" type="range" min="0.1" max="1" step="0.05" value="0.6"></div>
+<div><label id="lm" for="mix"></label><input id="mix" type="range" min="30" max="100" step="5" value="90"></div></div>
+<p id="msg"></p></div>
+<div class="nav"><button id="prev"></button><button id="next"></button></div>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const C={nh3:{c:935,s:70,lo:870,hi:1000},urea:{c:1025,s:130,lo:900,hi:1150}};
+const st={s:0,re:'nh3',T:950,t:0.6,mix:0.9,lang:'fr',t0:performance.now()};
+const N=12;
+const TX={fr:[
+['Origine des NOx','Les NOx se forment de trois façons : NOx thermiques (azote de l’air oxydé au-delà d’environ 1300 °C), NOx du combustible (azote du charbon, des déchets, de la biomasse) et NOx précoces (formés dans la flamme à partir de radicaux hydrocarbonés). Les matières premières du procédé sont donc les fumées chargées en NOx (points rouges), le réactif azoté et l’eau de dilution.'],
+['Les fumées refroidissent','Les fumées quittent le foyer très chaudes, puis se refroidissent le long de la chaudière (du rouge au bleu). La température est le paramètre le plus important du procédé : elle décide où le réactif peut agir.'],
+['La fenêtre de température','Trois zones : en dessous d’environ 850 °C, la réaction est trop lente (glissement d’ammoniac, dépôts de sels) ; entre 850 et 1100 °C, c’est la zone optimale ; au-dessus de 1100 °C, le réactif s’oxyde et produit lui-même des NOx.'],
+['Réactifs et stockage','Le réactif est stocké dans un réservoir avec un bac de dilution. Trois formes sont utilisées : ammoniac anhydre (gaz liquéfié sous pression, très efficace mais toxique), solution ammoniacale à 19–25 % (plus sûre, vapeurs à ventiler) et solution d’urée à 32–50 % (non toxique, mais risque de cristallisation, de N₂O et de CO).'],
+['Dilution et dosage','Un module de pompes, de vannes et de mesure de débit dose le réactif. L’eau de dilution sert à le transporter et à bien le répartir dans les fumées.'],
+['Distribution et lances','Le réseau de distribution amène le mélange aux différents niveaux d’injection. Les lances, avec air comprimé ou vapeur d’atomisation, sont placées sur les parois de la chaudière ou du four, dans la zone de température adaptée.'],
+['La réaction avec l’ammoniac','Sans catalyseur, l’ammoniac réduit le NO en azote et en eau. Les points bleus sont de l’azote moléculaire N₂. Comparez les NOx à l’entrée et à la sortie : l’efficacité se situe en général entre 30 et 70 %.'],
+['Mécanisme radicalaire','La réaction ne se limite pas à un contact direct : à haute température elle passe par des radicaux libres. Le radical amine NH₂• se forme d’abord, puis il réduit le NO.'],
+['Les réactions avec l’urée','Avec l’urée, il y a d’abord une thermolyse qui produit de l’ammoniac et de l’acide isocyanique ; en présence de vapeur d’eau, l’urée donne directement 2 NH₃ et du CO₂. L’ammoniac formé réduit ensuite les NOx.'],
+['Mesure et régulation','La mesure des NOx et de la température en sortie commande automatiquement le débit de réactif : c’est la boucle de régulation de l’installation.'],
+['Sortir de la fenêtre','Déplacez la température d’injection et changez de réactif (NH₃ : ≈ 870–1000 °C ; urée : ≈ 900–1150 °C). Trop chaud, l’ammoniac s’oxyde en NO ; trop froid, il reste non réagi : c’est le glissement d’ammoniac.'],
+['Paramètres de contrôle','Le temps de séjour (de quelques dixièmes de seconde à une seconde) et le mélange du réactif dans toute la section des fumées influencent aussi le résultat. Le glissement d’ammoniac doit rester faible, typiquement quelques ppm.']],
+ar:[
+['أصل أكاسيد الآزوت','تتكوّن NOx بثلاث طرق: حرارية (أكسدة آزوت الهواء فوق نحو 1300 °م)، ومن الوقود (آزوت الفحم أو النفايات أو الكتلة الحيوية)، ومبكرة (تتكوّن في اللهب من جذور هيدروكربونية). فالمواد الأولية للعملية هي الغازات المحمّلة بـ NOx (النقاط الحمراء) والمُختزِل الآزوتي وماء التخفيف.'],
+['تبرد الغازات','تغادر الغازات الفرن ساخنة جدًا ثم تبرد على طول المرجل (من الأحمر إلى الأزرق). والحرارة أهم معامل في العملية: فهي تحدد أين يمكن للمُختزِل أن يعمل.'],
+['نافذة الحرارة','ثلاث مناطق: أقل من نحو 850 °م يكون التفاعل بطيئًا جدًا (تسرّب أمونيا وترسّب أملاح)؛ بين 850 و1100 °م المنطقة المثلى؛ وفوق 1100 °م يتأكسد المُختزِل وينتج NOx بنفسه.'],
+['المُختزِلات والتخزين','يُخزَّن المُختزِل في خزان مع حوض للتخفيف. وتُستعمل ثلاث صيغ: الأمونيا اللامائية (غاز مُسال تحت ضغط، فعّال لكنه سام)، ومحلول الأمونيا 19–25 % (أكثر أمانًا لكن أبخرته تحتاج تهوية)، ومحلول اليوريا 32–50 % (غير سام لكن فيه خطر التبلور وتكوّن N₂O وCO).'],
+['التخفيف والمعايرة','وحدة من المضخات والصمامات وقياس التدفق تعاير كمية المُختزِل. ويُستعمل ماء التخفيف لنقله وتوزيعه جيدًا داخل الغازات.'],
+['التوزيع والرماحات','تنقل شبكة التوزيع الخليط إلى مستويات الحقن المختلفة. وتوضع الرماحات، مع هواء مضغوط أو بخار للتذرية، على جدران المرجل أو الفرن في منطقة الحرارة المناسبة.'],
+['التفاعل مع الأمونيا','بدون حفّاز تختزل الأمونيا NO إلى نيتروجين وماء. النقاط الزرقاء هي النيتروجين N₂. قارن NOx عند الدخول والخروج: الفعالية المعتادة بين 30 و70 %.'],
+['الآلية الجذرية','لا يقتصر التفاعل على تلامس مباشر، بل يمر عند الحرارة العالية عبر جذور حرة. يتكوّن أولًا جذر الأمين NH₂•، ثم يختزل هذا الجذر NO.'],
+['تفاعلات اليوريا','مع اليوريا يحدث أولًا تحلل حراري ينتج الأمونيا وحمض الإيزوسيانيك؛ وبوجود بخار الماء تعطي اليوريا مباشرة 2 NH₃ وCO₂. ثم تختزل الأمونيا الناتجة NOx.'],
+['القياس والتحكم','يقيس المحلل NOx والحرارة عند الخروج ويتحكم تلقائيًا في تدفق المُختزِل: هذه هي حلقة التحكم في المنشأة.'],
+['الخروج من النافذة','حرّك حرارة الحقن وبدّل المُختزِل (NH₃: ≈ 870–1000 °م؛ اليوريا: ≈ 900–1150 °م). إن كانت الحرارة عالية جدًا تتأكسد الأمونيا إلى NO، وإن كانت منخفضة جدًا تبقى دون تفاعل: وهذا هو تسرّب الأمونيا.'],
+['معاملات التحكم','يؤثر أيضًا زمن المكوث (من أجزاء من الثانية إلى ثانية) وجودة خلط المُختزِل في كامل مقطع الغازات. ويجب أن يبقى تسرّب الأمونيا ضعيفًا، عادةً بضع ppm.']]};
+TX.en=[
+['Origin of NOx','NOx form in three ways: thermal NOx (air nitrogen oxidized above about 1300 °C), fuel NOx (nitrogen in coal, waste or biomass) and prompt NOx (formed in the flame from hydrocarbon radicals). The raw materials of the process are therefore the NOx-laden flue gas (red dots), the nitrogen reagent and the dilution water.'],
+['The flue gas cools down','The flue gas leaves the furnace very hot, then cools along the boiler (from red to blue). Temperature is the most important parameter of the process: it decides where the reagent can act.'],
+['The temperature window','Three zones: below about 850 °C the reaction is too slow (ammonia slip, salt deposits); between 850 and 1100 °C is the optimal zone; above 1100 °C the reagent oxidizes and itself produces NOx.'],
+['Reagents and storage','The reagent is stored in a tank with a dilution tank. Three forms are used: anhydrous ammonia (liquefied gas under pressure, very effective but toxic), ammonia solution at 19–25 % (safer, vapors must be ventilated) and urea solution at 32–50 % (non-toxic, but risk of crystallization, N₂O and CO).'],
+['Dilution and dosing','A module of pumps, valves and flow measurement doses the reagent. The dilution water carries it and spreads it well through the flue gas.'],
+['Distribution and lances','The distribution network brings the mixture to the different injection levels. The lances, using compressed air or atomizing steam, are placed on the boiler or furnace walls, in the suitable temperature zone.'],
+['Reaction with ammonia','Without any catalyst, ammonia reduces NO to nitrogen and water. The blue dots are molecular nitrogen N₂. Compare NOx at the inlet and the outlet: efficiency is generally between 30 and 70 %.'],
+['Radical mechanism','The reaction is not just direct contact: at high temperature it goes through free radicals. The amine radical NH₂• forms first, then it reduces NO.'],
+['Reactions with urea','With urea, thermolysis comes first and produces ammonia and isocyanic acid; with water vapor, urea gives 2 NH₃ and CO₂ directly. The ammonia formed then reduces the NOx.'],
+['Measurement and control','Measuring NOx and temperature at the outlet automatically controls the reagent flow rate: this is the control loop of the plant.'],
+['Leaving the window','Move the injection temperature and switch reagent (NH₃: ≈ 870–1000 °C; urea: ≈ 900–1150 °C). Too hot, ammonia oxidizes to NO; too cold, it stays unreacted: this is ammonia slip.'],
+['Control parameters','Residence time (a few tenths of a second to one second) and mixing of the reagent across the whole flue gas section also affect the result. Ammonia slip must stay low, typically a few ppm.']];
+const EQ10={fr:'T trop élevée : NH₃ + 5/4 O₂ → NO + 3/2 H₂O   ·   T trop basse : NH₃ non réagi (glissement)',en:'T too high: NH₃ + 5/4 O₂ → NO + 3/2 H₂O   ·   T too low: unreacted NH₃ (slip)',ar:'حرارة مرتفعة: NH₃ + 5/4 O₂ → NO + 3/2 H₂O   ·   حرارة منخفضة: NH₃ دون تفاعل (تسرّب)'};
+const EQ={6:'4 NH₃ + 4 NO + O₂ → 4 N₂ + 6 H₂O',8:'2 NO + CO(NH₂)₂ + ½ O₂ → 2 N₂ + CO₂ + 2 H₂O',10:'T trop élevée : NH₃ + 5/4 O₂ → NO + 3/2 H₂O   ·   T trop basse : NH₃ non réagi (glissement)'};
+const UI={fr:{step:'Étape',of:'sur',prev:'Précédent',next:'Suivant',restart:'Recommencer',T:'Température d’injection : ',t:'Temps de séjour : ',m:'Mélange : ',ok:'Dans la fenêtre : la réduction est efficace.',cold:'Trop froid : réaction lente, le réactif sort non réagi (glissement d’ammoniac).',hot:'Trop chaud : le réactif s’oxyde et fabrique de nouveaux NOx.',eff:'Efficacité',slip:'Glissement NH₃'},
+ar:{step:'المرحلة',of:'من',prev:'السابق',next:'التالي',restart:'من البداية',T:'حرارة الحقن: ',t:'زمن المكوث: ',m:'الخلط: ',ok:'داخل النافذة: التفاعل فعّال.',cold:'بارد جدًا: التفاعل بطيء ويخرج المُختزِل دون تفاعل (تسرّب الأمونيا).',hot:'ساخن جدًا: يتأكسد المُختزِل ويصنع NOx جديدة.',eff:'الفعالية',slip:'تسرّب NH₃'}};
+UI.en={step:'Step',of:'of',prev:'Previous',next:'Next',restart:'Start over',T:'Injection temperature: ',t:'Residence time: ',m:'Mixing: ',ok:'Inside the window: reduction is effective.',cold:'Too cold: slow reaction, the reagent leaves unreacted (ammonia slip).',hot:'Too hot: the reagent oxidizes and creates new NOx.',eff:'Efficiency',slip:'NH₃ slip'};
+const win=()=>Math.exp(-Math.pow((st.T-C[st.re].c)/C[st.re].s,4));
+const ox=()=>1/(1+Math.exp(-(st.T-(C[st.re].hi+40))/30));
+const effRaw=()=>0.78*0.9*win()*(1-Math.exp(-st.t/0.22))*(0.45+0.55*st.mix)-0.35*ox();
+const eff=()=>st.s>=6?effRaw():0;
+const slipPpm=()=>Math.round(4+22*(1-win())*(1-ox())+(1-st.mix)*10);
+function render(){
+  const L=UI[st.lang],tx=TX[st.lang][st.s],rtl=st.lang==='ar';
+  ['ttl','txt','msg'].forEach(i=>{$(i).dir=rtl?'rtl':'ltr';});
+  $('ttl').textContent=tx[0];$('txt').textContent=tx[1];
+  $('cnt').textContent=L.step+' '+(st.s+1)+' '+L.of+' '+N;
+  $('prev').textContent=L.prev;$('next').textContent=st.s===N-1?L.restart:L.next;$('prev').disabled=st.s===0;
+  $('eq').hidden=!EQ[st.s];$('eq').textContent=(st.s===10?EQ10[st.lang]:EQ[st.s])||'';
+  $('play').hidden=st.s<10;$('adv').hidden=st.s<11;
+  $('lT').textContent=L.T+st.T+' °C';$('lt').textContent=L.t+st.t.toFixed(2)+' s';$('lm').textContent=L.m+Math.round(st.mix*100)+' %';
+  [...$('dots').children].forEach((d,i)=>d.classList.toggle('on',i<=st.s));
+  $('l-fr').setAttribute('aria-pressed',st.lang==='fr');$('l-ar').setAttribute('aria-pressed',rtl);$('l-en').setAttribute('aria-pressed',st.lang==='en');
+  $('b-nh3').setAttribute('aria-pressed',st.re==='nh3');$('b-urea').setAttribute('aria-pressed',st.re==='urea');
+  const m=$('msg');let txt;
+  if(win()>0.5){txt=L.ok;m.className='';}else{txt=st.T<C[st.re].c?L.cold:L.hot;m.className='bad';}
+  if(st.s>=11)txt+=' — '+L.eff+' ≈ '+Math.round(effRaw()*100)+' % · '+L.slip+' ≈ '+slipPpm()+' ppm';
+  m.textContent=txt;
+  document.documentElement.lang=st.lang;
+}
+function go(i){st.s=clamp(i,0,N-1);st.t0=performance.now();
+  if(st.s<5)P=P.filter(p=>p.k==='n');if(st.s<6)P=P.filter(p=>p.k!=='N');
+  if(st.s===0){Object.assign(st,{T:950,re:'nh3',t:0.6,mix:0.9});$('T').value=950;$('t').value=0.6;$('mix').value=90;}
+  render();}
+for(let i=0;i<N;i++){const b=document.createElement('button');b.setAttribute('aria-label',(i+1)+'');b.onclick=()=>go(i);$('dots').appendChild(b);}
+$('prev').onclick=()=>go(st.s-1);$('next').onclick=()=>go(st.s===N-1?0:st.s+1);
+$('l-fr').onclick=()=>{st.lang='fr';render()};$('l-ar').onclick=()=>{st.lang='ar';render()};$('l-en').onclick=()=>{st.lang='en';render()};
+$('T').oninput=e=>{st.T=+e.target.value;render()};$('t').oninput=e=>{st.t=+e.target.value;render()};$('mix').oninput=e=>{st.mix=+e.target.value/100;render()};
+$('b-nh3').onclick=()=>{st.re='nh3';render()};$('b-urea').onclick=()=>{st.re='urea';render()};
+addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){go(st.s+((e.key==='ArrowRight')===(st.lang!=='ar')?1:-1));}});
+/* scène */
+const g=$('cv').getContext('2d');
+const DY0=120,DY1=290,ZX0=330,ZX1=480,LX=[355,405,455];
+let P=[],FX=[],acc={n:0,r:0};
+const Tx=x=>st.T-(x-405)*0.9,hue=T=>220-clamp((T-600)/700,0,1)*220;
+const band=()=>{const c=st.s>=10?C[st.re]:{lo:850,hi:1100};return [clamp(405+(st.T-c.hi)/0.9,30,870),clamp(405+(st.T-c.lo)/0.9,30,870),c];};
+function step(dt){
+  const v=(ZX1-ZX0)/st.t*0.5,e=eff(),w=win(),o=ox();
+  acc.n+=dt*4;acc.r+=st.s>=5?dt*6:0;
+  while(acc.n>=1){acc.n--;P.push({k:'n',x:40,y:DY0+14+Math.random()*(DY1-DY0-28),ph:Math.random()*6});}
+  while(acc.r>=1){acc.r--;P.push({k:'r',x:LX[(Math.random()*3)|0],y:96,ty:(DY0+DY1)/2+(Math.random()-.5)*150*st.mix,ph:0});}
+  const pS=clamp(slipPpm()/30,0,0.9);
+  for(const p of P){
+    p.x+=v*dt;p.ph+=dt*3;
+    if(p.k==='r'&&!p.slip)p.y+=(p.ty-p.y)*Math.min(1,dt*3);else p.y+=Math.sin(p.ph)*8*dt;
+    if(!p.done&&p.x>ZX1){p.done=true;
+      if(p.k==='n'){if(e>0&&Math.random()<e){p.k='N';FX.push({x:p.x,y:p.y,r:3,l:1});}else if(e<0&&Math.random()<-e){P.push({k:'n',x:p.x,y:p.y+10,ph:0,done:true});FX.push({x:p.x,y:p.y,r:3,l:1,bad:1});}}
+      else if(p.k==='r'){if(st.s<6||Math.random()>pS)p.dead=true;else p.slip=true;}}
+  }
+  P=P.filter(p=>!p.dead&&p.x<862);
+  for(const f of FX){f.r+=dt*40;f.l-=dt*2.2;}FX=FX.filter(f=>f.l>0);
+}
+const HL=()=>{const b=band();return [[30,DY0-6,190,DY1-DY0+12],[30,DY0-6,840,DY1-DY0+12],[b[0],DY0-6,b[1]-b[0],DY1-DY0+12],[108,10,230,68],[200,8,285,52],[ZX0-10,24,ZX1-ZX0+20,DY1-20],[ZX0,DY0-6,ZX1-ZX0+90,DY1-DY0+12],null,null,[760,30,118,296]][st.s]||null;};
+/* zoom moléculaire */
+const RX={7:[{r:['NH₃','OH•'],p:['NH₂•','H₂O'],cap:'NH₃ + OH• → NH₂• + H₂O'},{r:['NH₂•','NO'],p:['N₂','H₂O'],cap:'NH₂• + NO → N₂ + H₂O'}],
+8:[{r:['CO(NH₂)₂'],p:['NH₃','HNCO'],cap:'CO(NH₂)₂ → NH₃ + HNCO  (thermolyse)'},{r:['CO(NH₂)₂','H₂O'],p:['NH₃','NH₃','CO₂'],cap:'CO(NH₂)₂ + H₂O → 2 NH₃ + CO₂'},{r:['NH₃','NO'],p:['N₂','H₂O'],cap:'puis NH₃ + NO → N₂ + H₂O'}]};
+const COL={'NH₃':'#4aa3ff','OH•':'#ffb347','NH₂•':'#7ee787','H₂O':'#6fd3ff','NO':'#ff5a3c','N₂':'#58a6ff','CO(NH₂)₂':'#c9a0ff','HNCO':'#ffd166','CO₂':'#aab4bf'};
+const ease=u=>u*u*(3-2*u);
+function mol(l,x,y,a){g.globalAlpha=a;g.fillStyle=COL[l]||'#ccc';g.beginPath();g.arc(x,y,l.length>5?40:30,0,7);g.fill();g.fillStyle='#10151a';g.font='700 15px system-ui,sans-serif';g.textAlign='center';g.fillText(l,x,y+5);g.globalAlpha=1;g.textAlign='left';}
+function molScene(now){
+  const list=RX[st.s],k=Math.floor(now/5000)%list.length,t=(now%5000)/1000,R=list[k],cx=450,cy=185,n=R.r.length,m=R.p.length;
+  g.fillStyle='rgba(12,15,18,.96)';g.fillRect(40,30,820,320);g.strokeStyle='#8b97a3';g.lineWidth=2;g.strokeRect(40,30,820,320);
+  g.fillStyle='#e9eef2';g.font='600 14px system-ui,sans-serif';g.fillText(st.s===7?'Zoom moléculaire : mécanisme radicalaire':'Zoom moléculaire : décomposition de l’urée',60,58);
+  if(t<2){const u=ease(t/2);R.r.forEach((l,i)=>{const sx=n===1?220:(i?740:160),tx=n===1?cx:cx+(i?36:-36);mol(l,sx+(tx-sx)*u,cy,1);});}
+  else if(t<2.5){g.strokeStyle='rgba(255,209,102,'+(1-(t-2)/0.5)+')';g.lineWidth=3;g.beginPath();g.arc(cx,cy,30+(t-2)*90,0,7);g.stroke();}
+  if(t>=2.3){const u=ease(clamp((t-2.3)/1.5,0,1));R.p.forEach((l,i)=>{const fx=m===2?(i?620:280):(300+i*150);mol(l,cx+(fx-cx)*u,cy,clamp((t-2.3)*2,0,1));});}
+  g.fillStyle='#ffd166';g.font='600 17px system-ui,sans-serif';g.textAlign='center';g.fillText(R.cap,450,320);g.textAlign='left';
+}
+function draw(now){
+  const s=st.s,b=band(),xa=b[0],xb=b[1],c=b[2];g.clearRect(0,0,900,380);g.textAlign='left';
+  for(let x=30;x<870;x+=6){g.fillStyle=s>=1?'hsl('+hue(Tx(x))+',55%,26%)':'#2a3138';g.fillRect(x,DY0,6,DY1-DY0);}
+  if(s>=2){g.save();g.beginPath();g.rect(30,DY0,840,DY1-DY0);g.clip();g.fillStyle='rgba(76,195,138,.24)';g.fillRect(xa,DY0,xb-xa,DY1-DY0);g.restore();
+    g.strokeStyle='#4cc38a';g.lineWidth=1.5;g.setLineDash([5,4]);[xa,xb].forEach(x=>{if(x>30&&x<870){g.beginPath();g.moveTo(x,DY0-10);g.lineTo(x,DY1+10);g.stroke();}});g.setLineDash([]);
+    g.fillStyle='#4cc38a';g.font='600 13px system-ui,sans-serif';g.fillText('Fenêtre '+c.lo+'–'+c.hi+' °C',clamp(xa,34,690),DY1+24);
+    if(s===2){g.font='600 12px system-ui,sans-serif';g.fillStyle='#ff9b8a';g.fillText('> 1100 °C : oxydation',Math.max(34,xa-150),DY0+22);g.fillStyle='#8fd0ff';g.fillText('< 850 °C : trop lent',Math.min(xb+8,730),DY0+22);}}
+  g.strokeStyle='#8b97a3';g.lineWidth=3;g.strokeRect(30,DY0,840,DY1-DY0);
+  g.fillStyle='#e9eef2';g.font='600 13px system-ui,sans-serif';g.fillText('Four / chaudière',34,DY0-12);g.fillText('NOx entrée : 300 ppm',34,DY1+44);
+  g.fillStyle='#6b747c';g.fillRect(826,40,44,DY0-40);g.fillStyle='#8b97a3';g.fillRect(820,34,56,8);
+  const out=Math.round(300*(1-eff()));g.textAlign='right';g.fillStyle='#e9eef2';g.font='600 14px system-ui,sans-serif';
+  g.fillText('NOx sortie : '+out+' ppm'+(s>=6?'  ('+(out<=300?'−':'+')+Math.abs(Math.round(100-out/3))+' %)':''),866,DY1+44);g.textAlign='left';
+  if(s>=1){g.font='12px system-ui,sans-serif';g.fillStyle='#b7c1cb';[[40,Tx(40)],[ZX0+40,Tx(405)],[790,Tx(790)]].forEach(a=>g.fillText('≈ '+Math.round(a[1])+' °C',a[0],DY1+16));}
+  if(s>=3){g.strokeStyle='#cbd5df';g.lineWidth=2;g.strokeRect(120,22,70,48);const lv=0.55+0.05*Math.sin(now/700);g.fillStyle='rgba(126,231,135,.4)';g.fillRect(122,22+48*(1-lv)+1,66,48*lv-2);g.fillStyle='#cbd5df';g.font='12px system-ui,sans-serif';g.fillText('Réservoir',124,16);
+    if(s===3){['NH₃ anhydre','NH₃ 19–25 %','Urée 32–50 %'].forEach((tg,i)=>g.fillText('• '+tg,200,36+i*16));}}
+  if(s>=4){g.fillStyle='#cbd5df';g.fillRect(190,28,40,6);g.fillRect(258,28,212,6);g.strokeStyle='#cbd5df';g.lineWidth=2;g.beginPath();g.arc(245,31,13,0,7);g.stroke();
+    g.beginPath();g.moveTo(245,31);g.lineTo(245+9*Math.cos(now/150),31+9*Math.sin(now/150));g.stroke();g.font='12px system-ui,sans-serif';g.fillText('Pompe',226,56);g.fillText('Réactif + eau de dilution',300,52);
+    g.fillStyle='#7ee787';for(let k=0;k<5;k++){g.fillRect(262+((now/18+k*44)%204),29,8,4);}}
+  if(s>=5){g.strokeStyle='#cbd5df';g.lineWidth=2;LX.forEach(x=>{g.beginPath();g.moveTo(x,34);g.lineTo(x,DY0+6);g.stroke();g.fillStyle='#cbd5df';g.fillRect(x-5,DY0+2,10,8);g.fillStyle='rgba(126,231,135,.25)';g.beginPath();g.moveTo(x,DY0+10);g.lineTo(x-14,DY0+54);g.lineTo(x+14,DY0+54);g.fill();});}
+  if(s>=9){g.fillStyle='#ffd166';g.fillRect(790,46,28,18);g.fillStyle='#cbd5df';g.font='12px system-ui,sans-serif';g.fillText('Analyseur',776,40);
+    g.strokeStyle='#ffd166';g.lineWidth=1.5;g.setLineDash([6,5]);g.lineDashOffset=-now/40;g.beginPath();g.moveTo(804,46);g.lineTo(804,8);g.lineTo(245,8);g.lineTo(245,18);g.stroke();g.setLineDash([]);g.fillStyle='#ffd166';g.fillText('Régulation du débit de réactif',520,22);}
+  for(const p of P){g.beginPath();
+    if(p.k==='n'){g.fillStyle='#ff5a3c';g.arc(p.x,p.y,4.5,0,7);g.fill();}
+    else if(p.k==='N'){g.fillStyle='#58a6ff';g.arc(p.x,p.y,4,0,7);g.fill();}
+    else if(p.slip){g.fillStyle='#fff';g.arc(p.x,p.y,5,0,7);g.fill();g.strokeStyle='#7ee787';g.lineWidth=2.5;g.stroke();}
+    else{g.fillStyle='#7ee787';g.arc(p.x,p.y,3,0,7);g.fill();}}
+  for(const f of FX){g.strokeStyle=f.bad?'rgba(255,90,60,'+f.l+')':'rgba(88,166,255,'+f.l+')';g.lineWidth=2;g.beginPath();g.arc(f.x,f.y,f.r,0,7);g.stroke();}
+  if(s===7||s===8){molScene(now);return;}
+  const h=HL(),age=(now-st.t0)/1000;
+  if(h&&age<3){g.strokeStyle='rgba(255,209,102,'+(1-age/3)*(0.6+0.4*Math.sin(age*9))+')';g.lineWidth=4;g.strokeRect(h[0],h[1],h[2],h[3]);}
+}
+let lt=performance.now();
+function loop(n){const dt=Math.min(.05,(n-lt)/1000);lt=n;step(dt);draw(n);requestAnimationFrame(loop);}
+render();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
